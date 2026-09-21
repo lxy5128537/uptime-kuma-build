@@ -1,0 +1,58 @@
+name: Build Uptime Kuma
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Uptime Kuma version (e.g. 2.5.5)'
+        required: true
+        default: '2.5.5'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download & Build Uptime Kuma
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          echo "Building Uptime Kuma v${VERSION}..."
+          
+          # Download source
+          curl -sL "https://github.com/louislam/uptime-kuma/archive/refs/tags/${VERSION}.tar.gz" | tar xz
+          mv "uptime-kuma-${VERSION}" app
+          cd app
+          
+          # Install & Build
+          npm install --omit=dev
+          npm run build
+          
+          # Package: keep only what's needed to run
+          cd ..
+          mkdir -p release
+          # Copy runtime files
+          cp -r app/server.js app/config app/db app/src app/node_modules release/ 2>/dev/null || true
+          cp -r app/dist release/ 2>/dev/null || true
+          cp app/package.json release/ 2>/dev/null || true
+          # Copy any remaining needed files
+          for f in app/*.js; do cp "$f" release/ 2>/dev/null; done
+          
+          # Create archive
+          tar czf "uptime-kuma-${VERSION}-linux-x64.tar.gz" -C release .
+          echo "Archive created: $(ls -lh uptime-kuma-${VERSION}-linux-x64.tar.gz)"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Uptime Kuma v${{ github.event.inputs.version }}
+          files: uptime-kuma-${{ github.event.inputs.version }}-linux-x64.tar.gz
+          draft: false
+          prerelease: false
