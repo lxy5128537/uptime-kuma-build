@@ -82,3 +82,4 @@ jobs:
           files: uptime-kuma-${{ steps.version.outputs.version }}-linux-x64.tar.gz
           draft: false
           prerelease: false
+          token: ${{ secrets.DEPLOY_PAT }}
