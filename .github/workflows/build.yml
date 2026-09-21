@@ -1,10 +1,8 @@
 name: Build Uptime Kuma
 
 on:
-  # 定时检查原仓库新版本 (每6小时)
   schedule:
     - cron: '0 */6 * * *'
-  # 手动触发
   workflow_dispatch:
     inputs:
       version:
@@ -14,14 +12,20 @@ on:
 jobs:
   check-and-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Determine version
         id: version
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            # 获取原仓库最新 release 版本
             VERSION=$(curl -sL "https://api.github.com/repos/louislam/uptime-kuma/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
@@ -31,7 +35,6 @@ jobs:
         id: check
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # 检查是否已有此版本的 release
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${VERSION}")
           if [ "$STATUS" = "200" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -41,45 +44,31 @@ jobs:
             echo "Version v${VERSION} not found, will build."
           fi
 
-      - name: Setup Node.js
-        if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Download & Build Uptime Kuma
         if: steps.check.outputs.skip != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           echo "Building Uptime Kuma v${VERSION}..."
           
-          # Download source
           curl -sL "https://github.com/louislam/uptime-kuma/archive/refs/tags/${VERSION}.tar.gz" | tar xz
           mv "uptime-kuma-${VERSION}" app
           cd app
-          
-          # Install ALL deps (including dev for build)
           npm install
-          
-          # Build frontend
           npx vite build --config ./config/vite.config.js
-          
-          # Remove dev deps after build
           npm prune --omit=dev
-          
           cd ..
           
-          # Package
           tar czf "uptime-kuma-${VERSION}-linux-x64.tar.gz" -C app .
           echo "Archive: $(ls -lh uptime-kuma-${VERSION}-linux-x64.tar.gz)"
 
       - name: Create Release
         if: steps.check.outputs.skip != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Uptime Kuma v${{ steps.version.outputs.version }}
-          files: uptime-kuma-${{ steps.version.outputs.version }}-linux-x64.tar.gz
-          draft: false
-          prerelease: false
-          token: ${{ secrets.DEPLOY_PAT }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release create "v${VERSION}" \
+            --repo "${{ github.repository }}" \
+            --title "Uptime Kuma v${VERSION}" \
+            --generate-notes \
+            "uptime-kuma-${VERSION}-linux-x64.tar.gz"
