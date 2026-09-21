@@ -12,9 +12,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,23 +27,20 @@ jobs:
           mv "uptime-kuma-${VERSION}" app
           cd app
           
-          # Install & Build
-          npm install --omit=dev
-          npm run build
+          # Install ALL deps (including dev for build)
+          npm install
           
-          # Package: keep only what's needed to run
+          # Build frontend
+          npx vite build --config ./config/vite.config.js
+          
+          # Remove dev deps after build
+          npm prune --omit=dev
+          
           cd ..
-          mkdir -p release
-          # Copy runtime files
-          cp -r app/server.js app/config app/db app/src app/node_modules release/ 2>/dev/null || true
-          cp -r app/dist release/ 2>/dev/null || true
-          cp app/package.json release/ 2>/dev/null || true
-          # Copy any remaining needed files
-          for f in app/*.js; do cp "$f" release/ 2>/dev/null; done
           
-          # Create archive
-          tar czf "uptime-kuma-${VERSION}-linux-x64.tar.gz" -C release .
-          echo "Archive created: $(ls -lh uptime-kuma-${VERSION}-linux-x64.tar.gz)"
+          # Package
+          tar czf "uptime-kuma-${VERSION}-linux-x64.tar.gz" -C app .
+          echo "Archive: $(ls -lh uptime-kuma-${VERSION}-linux-x64.tar.gz)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
